@@ -11,9 +11,10 @@ class AppConfig:
     ollama_base_url: str = "http://localhost:11434"
     ollama_timeout_seconds: int = 240
     ollama_json_mode: bool = True
+    ollama_num_predict: int | None = 2200
 
     input_pdf_folder: str = "input_pdfs"
-    video_duration_target: int = 45
+    video_duration_target: int = 180
     output_resolution: tuple[int, int] = (1080, 1920)
     fps: int = 30
     font_size: int = 68
@@ -29,6 +30,8 @@ class AppConfig:
     show_question_image: bool = True
     render_latex: bool = True
     low_res_preview: bool = False
+    min_solution_steps: int = 8
+    max_solution_steps: int | None = None
 
     tts_engine: str = "pyttsx3"
     tts_voice: str | None = None
@@ -44,7 +47,7 @@ class AppConfig:
 
     output_folder: str = "output"
     max_questions: int | None = None
-    skip_difficult: bool = True
+    skip_difficult: bool = False
 
     @property
     def output_path(self) -> Path:
@@ -91,8 +94,9 @@ def save_default_config(path: str | Path) -> None:
                 "ollama_base_url: http://localhost:11434",
                 "ollama_timeout_seconds: 240",
                 "ollama_json_mode: true",
+                "ollama_num_predict: 2200",
                 "input_pdf_folder: input_pdfs",
-                "video_duration_target: 45",
+                "video_duration_target: 180",
                 "output_resolution: [1080, 1920]",
                 "fps: 30",
                 "font_size: 68",
@@ -108,6 +112,8 @@ def save_default_config(path: str | Path) -> None:
                 "show_question_image: true",
                 "render_latex: true",
                 "low_res_preview: false",
+                "min_solution_steps: 8",
+                "max_solution_steps:",
                 "tts_engine: pyttsx3",
                 "tts_voice:",
                 "tts_rate: 175",
@@ -120,7 +126,7 @@ def save_default_config(path: str | Path) -> None:
                 "poppler_bin_dir:",
                 "output_folder: output",
                 "max_questions:",
-                "skip_difficult: true",
+                "skip_difficult: false",
                 "",
             ]
         ),
@@ -132,8 +138,23 @@ def _normalize_config_values(values: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(values)
     if "output_resolution" in normalized:
         normalized["output_resolution"] = parse_resolution(normalized["output_resolution"])
+    if normalized.get("ollama_num_predict") == "":
+        normalized["ollama_num_predict"] = None
+    if normalized.get("ollama_num_predict") is not None:
+        num_predict = int(normalized["ollama_num_predict"])
+        normalized["ollama_num_predict"] = num_predict if num_predict > 0 else None
     if normalized.get("max_questions") == "":
         normalized["max_questions"] = None
+    if normalized.get("max_solution_steps") == "":
+        normalized["max_solution_steps"] = None
+    if normalized.get("max_solution_steps") is not None:
+        max_solution_steps = int(normalized["max_solution_steps"])
+        normalized["max_solution_steps"] = max_solution_steps if max_solution_steps > 0 else None
+    if "min_solution_steps" in normalized:
+        if normalized.get("min_solution_steps") in {"", None}:
+            normalized["min_solution_steps"] = 0
+        else:
+            normalized["min_solution_steps"] = max(0, int(normalized["min_solution_steps"]))
     if normalized.get("font_path") == "":
         normalized["font_path"] = None
     if normalized.get("tts_voice") == "":

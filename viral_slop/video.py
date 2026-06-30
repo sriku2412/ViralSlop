@@ -118,13 +118,14 @@ class VideoRenderer:
             slides.append(SlideSpec("Main idea", main_idea, kind="method", weight=0.9))
 
         steps = [_clean_slide_text(step) for step in script.steps if _clean_slide_text(step)]
-        if not steps:
-            steps = [
-                _clean_slide_text(segment.text)
-                for segment in script.on_screen_text_segments
-                if segment.kind in {"step", "equation"} and _clean_slide_text(segment.text)
-            ]
-        for index, step in enumerate(steps[:8], start=1):
+        segment_steps = [
+            _clean_slide_text(segment.text)
+            for segment in script.on_screen_text_segments
+            if segment.kind in {"step", "equation"} and _clean_slide_text(segment.text)
+        ]
+        if len(segment_steps) > len(steps):
+            steps = segment_steps
+        for index, step in enumerate(_limit_steps(steps, self.config.max_solution_steps), start=1):
             slides.append(SlideSpec(f"Step {index}", step, kind="step", weight=1.0))
 
         final_answer = _clean_slide_text(script.final_answer)
@@ -244,6 +245,12 @@ def _timeline_for_slides(slides: list[SlideSpec], duration: float) -> list[tuple
         timeline.append((slide, cursor, slide_duration))
         cursor += slide_duration
     return timeline
+
+
+def _limit_steps(steps: list[str], max_steps: int | None) -> list[str]:
+    if max_steps is None or max_steps <= 0:
+        return steps
+    return steps[:max_steps]
 
 
 def _draw_wrapped_text(

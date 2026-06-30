@@ -4,9 +4,10 @@ ollama_model: deepseek-r1:8b
 ollama_base_url: http://localhost:11434
 ollama_timeout_seconds: 240
 ollama_json_mode: true
+ollama_num_predict: 2200
 
 input_pdf_folder: input_pdfs
-video_duration_target: 45
+video_duration_target: 180
 output_resolution: [1080, 1920]
 fps: 30
 font_size: 68
@@ -22,6 +23,8 @@ caption_pause_seconds: 0.35
 show_question_image: true
 render_latex: true
 low_res_preview: false
+min_solution_steps: 8
+max_solution_steps:
 
 tts_engine: pyttsx3
 tts_voice:
@@ -37,4 +40,4 @@ poppler_bin_dir:
 
 output_folder: output
 max_questions:
-skip_difficult: true
+skip_difficult: false

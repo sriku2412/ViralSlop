@@ -114,6 +114,8 @@ class OllamaClient:
                 "top_p": 0.9,
             },
         }
+        if self.config.ollama_num_predict:
+            payload["options"]["num_predict"] = self.config.ollama_num_predict
         if system:
             payload["system"] = system
         if self.config.ollama_json_mode:

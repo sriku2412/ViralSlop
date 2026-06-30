@@ -37,6 +37,7 @@ class OllamaClientTests(unittest.TestCase):
         _, kwargs = post.call_args
         self.assertTrue(kwargs["stream"])
         self.assertTrue(kwargs["json"]["stream"])
+        self.assertEqual(kwargs["json"]["options"]["num_predict"], 2200)
 
     def test_generate_reports_timeout_as_runtime_error(self) -> None:
         with patch("requests.post", side_effect=requests.Timeout):

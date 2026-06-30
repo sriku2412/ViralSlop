@@ -16,6 +16,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pdf", help="Path to a local math exam PDF.")
     parser.add_argument("--url", help="URL to a math exam PDF.")
     parser.add_argument("--model", help="Ollama model name, e.g. deepseek-r1:8b.")
+    parser.add_argument(
+        "--ollama-num-predict",
+        type=int,
+        help="Maximum Ollama output tokens. Use 0 to disable the limit.",
+    )
     parser.add_argument("--config", default="config.yaml", help="Path to config YAML.")
     parser.add_argument("--output", help="Output folder override.")
     parser.add_argument("--max-questions", type=int, help="Limit how many questions to process.")
@@ -26,6 +31,21 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--resolution",
         help="Output resolution override, e.g. 1080x1920.",
+    )
+    parser.add_argument(
+        "--duration",
+        type=int,
+        help="Target video duration in seconds.",
+    )
+    parser.add_argument(
+        "--max-solution-steps",
+        type=int,
+        help="Maximum rendered step slides. Use 0 for no cap.",
+    )
+    parser.add_argument(
+        "--min-solution-steps",
+        type=int,
+        help="Minimum proof step slides to request for hard problems. Use 0 to disable.",
     )
     parser.add_argument(
         "--style",
@@ -61,7 +81,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable OCR fallback for scanned PDFs.",
     )
-    parser.add_argument(
+    skip_group = parser.add_mutually_exclusive_group()
+    skip_group.add_argument(
+        "--skip-difficult",
+        action="store_true",
+        help="Skip audio/video when the model marks the full solution as too difficult.",
+    )
+    skip_group.add_argument(
         "--no-skip-difficult",
         action="store_true",
         help="Render strategy videos even when the model marks the full solution as too difficult.",
@@ -90,12 +116,22 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config(args.config)
     if args.model:
         config.ollama_model = args.model
+    if args.ollama_num_predict is not None:
+        config.ollama_num_predict = (
+            args.ollama_num_predict if args.ollama_num_predict > 0 else None
+        )
     if args.output:
         config.output_folder = args.output
     if args.max_questions is not None:
         config.max_questions = args.max_questions
     if args.resolution:
         config.output_resolution = parse_resolution(args.resolution)
+    if args.duration is not None:
+        config.video_duration_target = args.duration
+    if args.max_solution_steps is not None:
+        config.max_solution_steps = args.max_solution_steps if args.max_solution_steps > 0 else None
+    if args.min_solution_steps is not None:
+        config.min_solution_steps = max(0, args.min_solution_steps)
     if args.style:
         config.style_preset = args.style
     if args.preview:
@@ -105,6 +141,8 @@ def main(argv: list[str] | None = None) -> int:
         config.font_size = min(config.font_size, 42)
     if args.no_ocr:
         config.ocr_enabled = False
+    if args.skip_difficult:
+        config.skip_difficult = True
     if args.no_skip_difficult:
         config.skip_difficult = False
 

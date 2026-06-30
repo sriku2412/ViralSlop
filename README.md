@@ -35,6 +35,7 @@ The default preset is `solution_slides`:
 - Clean light background with readable dark text.
 - Original PDF question can appear on the first slide.
 - Slide timing is spread across the voice-over duration.
+- Difficult problems can expand into longer, multi-slide explanations instead of being skipped.
 - Timed caption JSON is still saved for review.
 - Offline voice-over through `pyttsx3` by default, with optional Piper support.
 
@@ -124,6 +125,12 @@ Render a faster preview:
 python main.py --pdf input_pdfs/exam.pdf --preview --max-questions 1
 ```
 
+Give a difficult problem more room:
+
+```bash
+python main.py --pdf input_pdfs/exam.pdf --preview --max-questions 1 --duration 240 --min-solution-steps 10 --max-solution-steps 0
+```
+
 Use a different local model:
 
 ```bash
@@ -149,9 +156,10 @@ Edit `config.yaml`:
 
 ```yaml
 ollama_model: deepseek-r1:8b
+ollama_num_predict: 2200
 input_pdf_folder: input_pdfs
 style_preset: solution_slides
-video_duration_target: 45
+video_duration_target: 180
 output_resolution: [1080, 1920]
 font_size: 68
 reveal_mode: slide
@@ -160,14 +168,16 @@ thinking_gap_seconds: 0.0
 answer_hold_seconds: 2.0
 show_question_image: true
 render_latex: true
+min_solution_steps: 8
+max_solution_steps:
 tts_engine: pyttsx3
 ocr_enabled: true
 output_folder: output
 max_questions:
-skip_difficult: true
+skip_difficult: false
 ```
 
-If `skip_difficult` is true and the model marks a full solution as too hard or uncertain, ViralSlop saves the script metadata but skips audio/video for that question rather than inventing an answer.
+By default, ViralSlop now asks the model to expand hard problems into more slides and still renders the result. `ollama_num_predict` keeps local model generations from running away; raise it if a stronger model needs more room. Set `skip_difficult: true` or pass `--skip-difficult` if you prefer to save only script metadata when the model says it cannot produce a complete solution.
 
 ## Current Local PDF
 

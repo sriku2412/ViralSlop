@@ -8,10 +8,10 @@ from viral_slop.models import Question, QuestionSolution, TextSegment, VideoScri
 from viral_slop.ollama_client import OllamaClient
 
 
-SYSTEM_PROMPT = """You are a clear math teacher making simple narrated solution slides.
-Return only valid JSON. Keep the explanation accurate, concise, and suitable for a 30 to 60 second vertical video.
+SYSTEM_PROMPT = """You are a clear math teacher making complete narrated solution slides.
+Return only valid JSON. Keep the explanation accurate, complete, and suitable for the requested vertical video duration.
 Do not include hidden reasoning, scratch work, markdown fences, or long exploratory text.
-When a full solution is too long or uncertain, say so honestly and create a useful strategy-first slide deck instead."""
+When a proof is long, split it across more short slides instead of skipping it."""
 
 
 def generate_solution_and_script(
@@ -19,9 +19,27 @@ def generate_solution_and_script(
     question: Question,
     target_duration_seconds: int,
 ) -> QuestionSolution:
-    prompt = _build_prompt(question, target_duration_seconds)
+    prompt = _build_prompt(
+        question,
+        target_duration_seconds,
+        min_solution_steps=client.config.min_solution_steps,
+        max_solution_steps=client.config.max_solution_steps,
+    )
     raw_response = client.generate(prompt=prompt, system=SYSTEM_PROMPT)
-    return parse_script_response(question, raw_response)
+    solution = parse_script_response(question, raw_response)
+    if _needs_expanded_solution(solution, client.config.min_solution_steps):
+        retry_prompt = _build_expansion_retry_prompt(
+            question,
+            target_duration_seconds,
+            solution,
+            min_solution_steps=client.config.min_solution_steps,
+            max_solution_steps=client.config.max_solution_steps,
+        )
+        retry_response = client.generate(prompt=retry_prompt, system=SYSTEM_PROMPT)
+        retry_solution = parse_script_response(question, retry_response)
+        if _usable_step_count(retry_solution.script) > _usable_step_count(solution.script):
+            return retry_solution
+    return solution
 
 
 def parse_script_response(question: Question, raw_response: str) -> QuestionSolution:
@@ -57,7 +75,7 @@ def parse_script_response(question: Question, raw_response: str) -> QuestionSolu
             "",
         ),
         on_screen_text_segments=segments,
-        skip_full_solution=bool(
+        skip_full_solution=_coerce_bool(
             script_data.get("skip_full_solution", data.get("skip_full_solution", False))
         ),
         skip_reason=_optional_string(
@@ -137,7 +155,13 @@ def default_segments(script: VideoScript) -> list[TextSegment]:
     return segments
 
 
-def _build_prompt(question: Question, target_duration_seconds: int) -> str:
+def _build_prompt(
+    question: Question,
+    target_duration_seconds: int,
+    min_solution_steps: int = 8,
+    max_solution_steps: int | None = None,
+) -> str:
+    slide_budget = _slide_budget_requirement(min_solution_steps, max_solution_steps)
     return f"""
 Create a simple narrated slide deck for this math exam question.
 
@@ -146,14 +170,15 @@ Question text:
 {question.text}
 
 Requirements:
-- Solve the problem correctly.
+- Solve the problem correctly and give a complete contest-style solution.
 - Explain it as static slides with voice over, not as animated chalkboard writing.
-- Use 4 to 7 total slides: problem, main idea, 2 to 4 steps, final answer.
-- Keep each slide text short: ideally under 22 words.
-- Keep the voiceover around {target_duration_seconds} seconds.
+- {slide_budget}
+- Keep each slide text short: ideally 18 to 30 words. Split dense arguments across more slides.
+- Each step must be a concrete proof move, construction, bound, or verification. Avoid vague outline text.
+- Aim for about {target_duration_seconds} seconds of voiceover. If a complete solution needs longer, prioritize completeness.
 - Do not include exploratory thinking, false starts, or scratch-work.
 - Include a latex field only when a slide is equation-heavy. Use LaTeX math without dollar signs, for example "\\frac{{x+1}}{{2}}=3".
-- If a complete rigorous solution is too difficult for a short video, set skip_full_solution to true and make a strategy-focused script instead of inventing a fake answer.
+- Do not set skip_full_solution just because the solution is long. Set it true only when you genuinely cannot determine a correct solution.
 
 Return exactly this JSON shape:
 {{
@@ -199,6 +224,68 @@ Return exactly this JSON shape:
   }}
 }}
 """.strip()
+
+
+def _build_expansion_retry_prompt(
+    question: Question,
+    target_duration_seconds: int,
+    previous_solution: QuestionSolution,
+    min_solution_steps: int,
+    max_solution_steps: int | None,
+) -> str:
+    previous_steps = _usable_step_count(previous_solution.script)
+    base_prompt = _build_prompt(
+        question,
+        target_duration_seconds,
+        min_solution_steps=min_solution_steps,
+        max_solution_steps=max_solution_steps,
+    )
+    return f"""
+{base_prompt}
+
+Important correction:
+The previous response only had {previous_steps} concrete proof step(s), which is too compressed for this hard problem.
+Return a replacement JSON object with at least {min_solution_steps} concrete proof steps and matching step/equation on_screen_text_segments.
+Do not give a strategy overview; give the actual proof.
+""".strip()
+
+
+def _slide_budget_requirement(min_solution_steps: int, max_solution_steps: int | None) -> str:
+    minimum = max(0, min_solution_steps)
+    if max_solution_steps is None:
+        return (
+            "Use as many step slides as needed: problem, main idea, complete proof steps, "
+            "and final answer. "
+            f"For hard or olympiad problems, use at least {minimum} concrete proof step slides"
+        )
+    return (
+        f"Use up to {max_solution_steps} step slides, choosing enough for a complete "
+        "solution instead of compressing or skipping the proof. "
+        f"For hard or olympiad problems, aim for at least {minimum} concrete proof step slides"
+    )
+
+
+def _needs_expanded_solution(solution: QuestionSolution, min_solution_steps: int) -> bool:
+    if min_solution_steps <= 0 or solution.script.skip_full_solution:
+        return False
+    difficulty = (solution.script.difficulty or "").strip().lower()
+    hard_problem = difficulty in {"hard", "olympiad"}
+    if not hard_problem:
+        question_text = solution.question.text.lower()
+        hard_problem = "olympiad" in question_text or "imo" in question_text
+    return hard_problem and _usable_step_count(solution.script) < min_solution_steps
+
+
+def _usable_step_count(script: VideoScript) -> int:
+    step_count = len([step for step in script.steps if _clean_string(step, "")])
+    segment_count = len(
+        [
+            segment
+            for segment in script.on_screen_text_segments
+            if segment.kind in {"step", "equation"} and _clean_string(segment.text, "")
+        ]
+    )
+    return max(step_count, segment_count)
 
 
 def _extract_json(text: str) -> dict[str, Any] | None:
@@ -356,6 +443,20 @@ def _coerce_float(value: Any, fallback: float) -> float:
     except (TypeError, ValueError):
         return fallback
     return parsed if parsed > 0 else fallback
+
+
+def _coerce_bool(value: Any, fallback: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return fallback
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"true", "yes", "y", "1"}:
+            return True
+        if text in {"false", "no", "n", "0", "null", "none", ""}:
+            return False
+    return bool(value)
 
 
 def _guess_latex(text: str) -> str | None:
