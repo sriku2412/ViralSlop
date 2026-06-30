@@ -8,11 +8,10 @@ from viral_slop.models import Question, QuestionSolution, TextSegment, VideoScri
 from viral_slop.ollama_client import OllamaClient
 
 
-SYSTEM_PROMPT = """You are a creative, warm math teacher making chalkboard-style YouTube Shorts.
-Return only valid JSON. Keep the explanation accurate, human, and suitable for a 30 to 60 second vertical video.
-Use a lively teacher voice: clear, encouraging, slightly dramatic, never fake-hype.
-When a full solution is too long or uncertain, say so honestly and create a useful strategy-first mini lesson instead.
-Do not use markdown fences."""
+SYSTEM_PROMPT = """You are a clear math teacher making simple narrated solution slides.
+Return only valid JSON. Keep the explanation accurate, concise, and suitable for a 30 to 60 second vertical video.
+Do not include hidden reasoning, scratch work, markdown fences, or long exploratory text.
+When a full solution is too long or uncertain, say so honestly and create a useful strategy-first slide deck instead."""
 
 
 def generate_solution_and_script(
@@ -32,10 +31,11 @@ def parse_script_response(question: Question, raw_response: str) -> QuestionSolu
 
     script_candidate = data.get("video_script")
     script_data = script_candidate if isinstance(script_candidate, dict) else data
-    segments_data = script_data.get("on_screen_text_segments") or script_data.get(
-        "on_screen_text"
-    )
+    segments_data = script_data.get("on_screen_text_segments") or script_data.get("slides")
     segments = _coerce_segments(segments_data, script_data)
+    steps = _coerce_steps(script_data.get("steps") or script_data.get("step_by_step_solution"))
+    if not steps:
+        steps = _steps_from_summary(data.get("solution_summary") or data.get("solution"))
 
     script = VideoScript(
         hook=_clean_string(script_data.get("hook"), "Here is the key idea."),
@@ -47,7 +47,7 @@ def parse_script_response(question: Question, raw_response: str) -> QuestionSolu
             script_data.get("main_idea") or script_data.get("recommended_method"),
             "Choose the fastest reliable method, then compute carefully.",
         ),
-        steps=_coerce_steps(script_data.get("steps") or script_data.get("step_by_step_solution")),
+        steps=steps,
         final_answer=_clean_string(
             script_data.get("final_answer") or data.get("final_answer"),
             "See the final step.",
@@ -94,40 +94,44 @@ def build_narration(script: VideoScript) -> str:
 
 def default_segments(script: VideoScript) -> list[TextSegment]:
     segments = [
-        TextSegment(script.hook, color="white", kind="hook", duration_weight=0.8),
+        TextSegment(script.hook, color="white", kind="hook", duration_weight=0.8, reveal="slide"),
         TextSegment(
-            f"Problem: {script.problem_explanation}",
+            script.problem_explanation,
             color="white",
             kind="problem",
             duration_weight=1.25,
+            reveal="slide",
         ),
         TextSegment(
-            f"Method: {script.main_idea}",
+            script.main_idea,
             color="yellow",
             kind="method",
             duration_weight=1.0,
             pause_after=0.25,
+            reveal="slide",
         ),
     ]
     for index, step in enumerate(script.steps, start=1):
         segments.append(
             TextSegment(
-                f"Step {index}: {step}",
+                step,
                 color="white",
                 kind="step",
                 latex=_guess_latex(step),
                 duration_weight=1.0,
+                reveal="slide",
             )
         )
     segments.append(
         TextSegment(
-            f"Final answer: {script.final_answer}",
+            script.final_answer,
             emphasis=True,
             color="yellow",
             kind="answer",
             latex=_guess_latex(script.final_answer),
             duration_weight=1.3,
             pause_after=0.6,
+            reveal="slide",
         )
     )
     return segments
@@ -135,7 +139,7 @@ def default_segments(script: VideoScript) -> list[TextSegment]:
 
 def _build_prompt(question: Question, target_duration_seconds: int) -> str:
     return f"""
-Create a short vertical YouTube Shorts solution for this math exam question.
+Create a simple narrated slide deck for this math exam question.
 
 Question number: {question.number}
 Question text:
@@ -143,16 +147,12 @@ Question text:
 
 Requirements:
 - Solve the problem correctly.
-- Explain the problem first.
-- Recommend the solving method.
-- Show a concise step-by-step solution.
-- End with the final answer.
-- Keep the narration around {target_duration_seconds} seconds.
-- Use a chalkboard teacher style: black background, mostly white text, yellow for key ideas/final highlights, red only for warnings or important corrections.
-- Use short on-screen text segments that can reveal word by word.
-- Include a latex field for equation-heavy segments. Use LaTeX math without dollar signs, for example "\\frac{{x+1}}{{2}}=3".
-- Add duration_weight values so harder steps stay on screen longer.
-- Add pause_after when the viewer needs a beat to think.
+- Explain it as static slides with voice over, not as animated chalkboard writing.
+- Use 4 to 7 total slides: problem, main idea, 2 to 4 steps, final answer.
+- Keep each slide text short: ideally under 22 words.
+- Keep the voiceover around {target_duration_seconds} seconds.
+- Do not include exploratory thinking, false starts, or scratch-work.
+- Include a latex field only when a slide is equation-heavy. Use LaTeX math without dollar signs, for example "\\frac{{x+1}}{{2}}=3".
 - If a complete rigorous solution is too difficult for a short video, set skip_full_solution to true and make a strategy-focused script instead of inventing a fake answer.
 
 Return exactly this JSON shape:
@@ -166,7 +166,7 @@ Return exactly this JSON shape:
     "hook": "one short sentence",
     "problem_explanation": "one or two short sentences",
     "main_idea": "recommended solving method",
-    "steps": ["step 1", "step 2", "step 3"],
+    "steps": ["short step slide 1", "short step slide 2", "short step slide 3"],
     "final_answer": "final answer only",
     "difficulty": "easy|medium|hard|olympiad",
     "skip_full_solution": false,
@@ -174,26 +174,26 @@ Return exactly this JSON shape:
     "voiceover_narration": "full narration text for TTS",
     "on_screen_text_segments": [
       {{
-        "text": "short line for screen",
+        "text": "one complete slide of text",
         "narration_hint": "matching narration idea",
         "emphasis": false,
         "color": "white",
         "kind": "problem|method|step|equation|answer|pause",
         "latex": null,
         "duration_weight": 1.0,
-        "pause_after": 0.2,
-        "reveal": "word"
+        "pause_after": 0.0,
+        "reveal": "slide"
       }},
       {{
-        "text": "Final answer: ...",
+        "text": "final answer only",
         "narration_hint": "final answer",
         "emphasis": true,
         "color": "yellow",
         "kind": "answer",
         "latex": null,
         "duration_weight": 1.4,
-        "pause_after": 0.6,
-        "reveal": "word"
+        "pause_after": 0.0,
+        "reveal": "slide"
       }}
     ]
   }}
@@ -226,9 +226,12 @@ def _coerce_segments(value: Any, script_data: dict[str, Any]) -> list[TextSegmen
         segments: list[TextSegment] = []
         for item in value:
             if isinstance(item, str):
-                segments.append(TextSegment(item, latex=_guess_latex(item)))
+                segments.append(TextSegment(item, latex=_guess_latex(item), reveal="slide"))
             elif isinstance(item, dict):
-                text = _clean_string(item.get("text"), "")
+                text = _clean_string(
+                    item.get("text") or item.get("body") or item.get("content"),
+                    "",
+                )
                 if text:
                     emphasis = bool(item.get("emphasis", False))
                     segments.append(
@@ -241,7 +244,7 @@ def _coerce_segments(value: Any, script_data: dict[str, Any]) -> list[TextSegmen
                             kind=_clean_string(item.get("kind"), "text"),
                             duration_weight=_coerce_float(item.get("duration_weight"), 1.0),
                             pause_after=_coerce_float(item.get("pause_after"), 0.0),
-                            reveal=_optional_string(item.get("reveal")),
+                            reveal=_optional_string(item.get("reveal")) or "slide",
                         )
                     )
         if segments:
@@ -270,14 +273,25 @@ def _coerce_steps(value: Any) -> list[str]:
     return []
 
 
+def _steps_from_summary(value: Any) -> list[str]:
+    text = _clean_string(value, "")
+    if not text:
+        return []
+    compact = re.sub(r"\s+", " ", text).strip()
+    pieces = re.split(r"(?:\bStep\s+\d+[:.]|\s+\d+[\.\)]\s+|(?<=[.!?])\s+)", compact)
+    steps = [_shorten(piece.strip(), 170) for piece in pieces if len(piece.strip()) >= 24]
+    return steps[:5]
+
+
 def _fallback_from_text(question: Question, text: str) -> QuestionSolution:
     cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.I).strip()
     final = _guess_final_answer(cleaned)
+    steps = _steps_from_summary(cleaned) or ["Work through the expression carefully."]
     script = VideoScript(
         hook="Can you spot the fastest path?",
         problem_explanation=_shorten(question.text, 260),
         main_idea="Use the cleanest algebraic steps and keep each operation balanced.",
-        steps=[_shorten(cleaned, 360)] if cleaned else ["Work through the expression carefully."],
+        steps=steps,
         final_answer=final,
         voiceover_narration="",
         skip_full_solution=True,

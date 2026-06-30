@@ -47,7 +47,8 @@ def build_caption_timeline(
         return []
 
     intro_seconds = 0.0
-    if include_intro_gap:
+    slide_mode = config.style_preset == "solution_slides" or config.reveal_mode == "slide"
+    if include_intro_gap and not slide_mode:
         intro_seconds = config.question_hold_seconds + config.thinking_gap_seconds
 
     available = max(4.0, total_duration - intro_seconds)

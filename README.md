@@ -1,6 +1,8 @@
-# ViralSlop
+# ViralSlop - An AI Slop maker
 
-ViralSlop turns a math exam PDF into one short vertical YouTube Shorts-style video per question, using local tools. It extracts questions, optionally uses OCR for scanned PDFs, asks a local Ollama model to solve and script each question, generates offline voice-over, and renders chalkboard-style 9:16 MP4 videos.
+AI-made shorts. Maximum brainrot. Zero shame.
+
+ViralSlop turns a math problem into one short vertical YouTube Shorts-style video per question, using local tools. It extracts questions, optionally uses OCR for scanned PDFs, asks a local Ollama model to solve and script each question, generates offline voice-over, and renders simple narrated 9:16 solution slides.
 
 The default model is `deepseek-r1:8b`, which is a good starting point for a regular Apple M4 MacBook Pro. Faster options include `qwen3:4b` and `deepseek-r1:7b`; stronger options include `deepseek-r1:14b` and `qwen3:14b`.
 
@@ -26,16 +28,14 @@ output/
 
 ## Video Style
 
-The default preset is `chalkboard_teacher`:
+The default preset is `solution_slides`:
 
 - Vertical `1080x1920` YouTube Shorts format.
-- Black chalkboard background.
-- Mostly white text, yellow for methods/final highlights, red for warnings or corrections.
-- Original PDF question shown briefly at the start.
-- A short thinking gap before the solution sequence.
-- Word-by-word text reveal as the explanation builds.
-- Timed caption JSON for every screen segment.
-- LaTeX/mathtext rendering for equation-heavy segments when Matplotlib supports the expression.
+- Static full-screen slides: problem, main idea, solution steps, final answer.
+- Clean light background with readable dark text.
+- Original PDF question can appear on the first slide.
+- Slide timing is spread across the voice-over duration.
+- Timed caption JSON is still saved for review.
 - Offline voice-over through `pyttsx3` by default, with optional Piper support.
 
 ## Setup On Mac
@@ -150,14 +150,14 @@ Edit `config.yaml`:
 ```yaml
 ollama_model: deepseek-r1:8b
 input_pdf_folder: input_pdfs
-style_preset: chalkboard_teacher
+style_preset: solution_slides
 video_duration_target: 45
 output_resolution: [1080, 1920]
 font_size: 68
-reveal_mode: word
-question_hold_seconds: 5.0
-thinking_gap_seconds: 2.5
-answer_hold_seconds: 5.0
+reveal_mode: slide
+question_hold_seconds: 0.0
+thinking_gap_seconds: 0.0
+answer_hold_seconds: 2.0
 show_question_image: true
 render_latex: true
 tts_engine: pyttsx3

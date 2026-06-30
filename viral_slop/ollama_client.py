@@ -108,7 +108,7 @@ class OllamaClient:
         payload: dict[str, Any] = {
             "model": self.config.ollama_model,
             "prompt": prompt,
-            "stream": False,
+            "stream": True,
             "options": {
                 "temperature": 0.2,
                 "top_p": 0.9,
@@ -124,12 +124,19 @@ class OllamaClient:
             response = requests.post(
                 url,
                 json=payload,
+                stream=True,
                 timeout=self.config.ollama_timeout_seconds,
             )
         except requests.ConnectionError as exc:
             raise RuntimeError(
                 "Could not connect to Ollama. Start the local server with:\n"
                 "ollama serve"
+            ) from exc
+        except requests.Timeout as exc:
+            raise RuntimeError(
+                "Timed out waiting for Ollama to start responding. "
+                f"Increase ollama_timeout_seconds in config.yaml if the model is still loading "
+                f"or use a smaller model. Current timeout: {self.config.ollama_timeout_seconds}s."
             ) from exc
 
         if response.status_code == 404:
@@ -138,9 +145,48 @@ class OllamaClient:
                 f"ollama pull {self.config.ollama_model}"
             )
 
-        response.raise_for_status()
-        data = response.json()
-        generated = data.get("response")
-        if not isinstance(generated, str) or not generated.strip():
-            raise RuntimeError(f"Ollama returned an empty response: {json.dumps(data)[:500]}")
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            detail = getattr(response, "text", "")[:500]
+            message = f"Ollama returned HTTP {response.status_code}"
+            if detail:
+                message += f": {detail}"
+            raise RuntimeError(message) from exc
+
+        generated_parts: list[str] = []
+        last_payload: dict[str, Any] = {}
+        try:
+            for line in response.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                data = json.loads(line)
+                if not isinstance(data, dict):
+                    continue
+                last_payload = data
+                if data.get("error"):
+                    raise RuntimeError(f"Ollama generation failed: {data['error']}")
+                chunk = data.get("response")
+                if isinstance(chunk, str):
+                    generated_parts.append(chunk)
+                if data.get("done"):
+                    break
+        except requests.Timeout as exc:
+            raise RuntimeError(
+                "Timed out while Ollama was generating. The model may still be running locally. "
+                f"Increase ollama_timeout_seconds in config.yaml or use a smaller model. "
+                f"Current timeout: {self.config.ollama_timeout_seconds}s."
+            ) from exc
+        except requests.RequestException as exc:
+            raise RuntimeError(
+                "The Ollama connection was interrupted while generating. "
+                "Check that the local Ollama server is still running, then try again."
+            ) from exc
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("Ollama returned an invalid streaming response.") from exc
+
+        generated = "".join(generated_parts)
+        if not generated.strip():
+            details = json.dumps(last_payload)[:500] if last_payload else "no response chunks"
+            raise RuntimeError(f"Ollama returned an empty response: {details}")
         return generated.strip()

@@ -19,12 +19,12 @@ class AppConfig:
     font_size: int = 68
     font_path: str | None = None
     text_margin: int = 90
-    style_preset: str = "chalkboard_teacher"
-    reveal_mode: str = "word"
+    style_preset: str = "solution_slides"
+    reveal_mode: str = "slide"
     max_reveal_words: int = 42
-    question_hold_seconds: float = 5.0
-    thinking_gap_seconds: float = 2.5
-    answer_hold_seconds: float = 5.0
+    question_hold_seconds: float = 0.0
+    thinking_gap_seconds: float = 0.0
+    answer_hold_seconds: float = 2.0
     caption_pause_seconds: float = 0.35
     show_question_image: bool = True
     render_latex: bool = True
@@ -98,12 +98,12 @@ def save_default_config(path: str | Path) -> None:
                 "font_size: 68",
                 "font_path:",
                 "text_margin: 90",
-                "style_preset: chalkboard_teacher",
-                "reveal_mode: word",
+                "style_preset: solution_slides",
+                "reveal_mode: slide",
                 "max_reveal_words: 42",
-                "question_hold_seconds: 5.0",
-                "thinking_gap_seconds: 2.5",
-                "answer_hold_seconds: 5.0",
+                "question_hold_seconds: 0.0",
+                "thinking_gap_seconds: 0.0",
+                "answer_hold_seconds: 2.0",
                 "caption_pause_seconds: 0.35",
                 "show_question_image: true",
                 "render_latex: true",
