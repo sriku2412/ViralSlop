@@ -1,0 +1,40 @@
+# ViralSlop local YouTube Shorts generator configuration.
+
+ollama_model: deepseek-r1:8b
+ollama_base_url: http://localhost:11434
+ollama_timeout_seconds: 240
+ollama_json_mode: true
+
+input_pdf_folder: input_pdfs
+video_duration_target: 45
+output_resolution: [1080, 1920]
+fps: 30
+font_size: 68
+font_path:
+text_margin: 90
+style_preset: chalkboard_teacher
+reveal_mode: word
+max_reveal_words: 42
+question_hold_seconds: 5.0
+thinking_gap_seconds: 2.5
+answer_hold_seconds: 5.0
+caption_pause_seconds: 0.35
+show_question_image: true
+render_latex: true
+low_res_preview: false
+
+tts_engine: pyttsx3
+tts_voice:
+tts_rate: 175
+piper_binary: piper
+piper_model_path:
+
+ocr_enabled: true
+ocr_language: eng
+ocr_dpi: 220
+question_image_dpi: 160
+poppler_bin_dir:
+
+output_folder: output
+max_questions:
+skip_difficult: true
