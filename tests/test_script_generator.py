@@ -34,8 +34,14 @@ class ScriptGeneratorTests(unittest.TestCase):
         solution = parse_script_response(question, raw)
 
         self.assertEqual(solution.script.steps, ["Subtract 2 to get 3x = 12.", "Divide by 3."])
-        self.assertEqual(solution.script.on_screen_text_segments[0].text, "Subtract 2 to get 3x = 12.")
-        self.assertEqual(solution.script.on_screen_text_segments[0].reveal, "slide")
+        step_segments = [
+            segment
+            for segment in solution.script.on_screen_text_segments
+            if segment.kind == "step"
+        ]
+        self.assertEqual(step_segments[0].text, "Subtract 2 to get 3x = 12.")
+        self.assertEqual(step_segments[0].reveal, "slide")
+        self.assertIn("Solve 3x + 2 = 14.", solution.script.voiceover_narration)
 
     def test_parse_string_false_skip_flag(self) -> None:
         question = Question(number=1, label="Question 1", text="Solve 3x + 2 = 14.")

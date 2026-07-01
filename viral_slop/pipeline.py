@@ -5,9 +5,9 @@ from pathlib import Path
 
 from viral_slop.config import AppConfig
 from viral_slop.json_utils import write_json
+from viral_slop.latex_input import question_from_latex
+from viral_slop.models import Question
 from viral_slop.ollama_client import OllamaClient
-from viral_slop.pdf_processor import extract_questions_from_pdf, load_pdf_source
-from viral_slop.pdf_visuals import create_question_images
 from viral_slop.script_generator import generate_solution_and_script
 from viral_slop.system_check import collect_system_info, format_system_info
 from viral_slop.timing import audio_duration_seconds, build_caption_timeline
@@ -21,7 +21,6 @@ class PipelineOptions:
     scripts_only: bool = False
     no_video: bool = False
     skip_existing: bool = False
-    question_numbers: set[int] | None = None
 
 
 class ShortsPipeline:
@@ -33,47 +32,29 @@ class ShortsPipeline:
         self.audio_dir = self.output / "audio"
         self.videos_dir = self.output / "videos"
         self.captions_dir = self.output / "captions"
-        self.question_images_dir = self.output / "question_images"
+        self.latex_inputs_dir = self.output / "latex_inputs"
 
-    def run(self, pdf_path: str | Path | None = None, pdf_url: str | None = None) -> Path:
+    def run_latex(self, latex: str, question_number: int | None = None) -> Path:
         self._prepare_output_dirs()
         info = collect_system_info(self.output)
         print(format_system_info(info))
 
-        source_pdf = load_pdf_source(pdf_path, pdf_url, self.config.input_pdf_path)
-        print(f"Reading PDF: {source_pdf}")
-        questions = extract_questions_from_pdf(
-            source_pdf,
-            ocr_enabled=self.config.ocr_enabled,
-            ocr_language=self.config.ocr_language,
-            ocr_dpi=self.config.ocr_dpi,
-            poppler_bin_dir=self.config.poppler_bin_dir,
-        )
-        if self.options.question_numbers:
-            questions = [
-                question
-                for question in questions
-                if question.number in self.options.question_numbers
-            ]
-        if self.config.max_questions:
-            questions = questions[: self.config.max_questions]
-        if not questions:
-            raise RuntimeError("No questions were detected in the PDF.")
+        question = question_from_latex(latex, question_number=question_number)
+        source_path = self.latex_inputs_dir / f"question_{question.number}.tex"
+        source_path.write_text(question.text + "\n", encoding="utf-8")
 
-        if self.config.show_question_image:
-            create_question_images(
-                pdf_path=source_pdf,
-                questions=questions,
-                output_dir=self.question_images_dir,
-                dpi=self.config.question_image_dpi,
-                poppler_bin_dir=self.config.poppler_bin_dir,
-            )
-
-        write_json(self.output / "questions.json", [question.to_dict() for question in questions])
-        print(f"Detected {len(questions)} question(s).")
+        write_json(self.output / "questions.json", [question.to_dict()])
+        print(f"Loaded on-demand LaTeX problem as {question.label}.")
+        print(f"Saved LaTeX source: {source_path}")
         if self.options.extract_only:
             print("Extraction-only mode complete.")
             return self.output
+
+        return self._render_questions([question])
+
+    def _render_questions(self, questions: list[Question]) -> Path:
+        if not questions:
+            raise RuntimeError("No questions were provided for rendering.")
 
         client = OllamaClient(self.config)
         client.require_ready()
@@ -143,7 +124,6 @@ class ShortsPipeline:
                     solution.script,
                     audio_path,
                     video_path,
-                    question_image_path=question.image_path,
                     captions=captions,
                 )
                 solution.video_path = str(video_path)
@@ -161,7 +141,6 @@ class ShortsPipeline:
             self.audio_dir,
             self.videos_dir,
             self.captions_dir,
-            self.question_images_dir,
-            self.config.input_pdf_path,
+            self.latex_inputs_dir,
         ]:
             path.mkdir(parents=True, exist_ok=True)

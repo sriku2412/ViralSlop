@@ -42,7 +42,7 @@ def main() -> int:
         questions = load_questions()
         question = next((item for item in questions if item.get("number") == number), None)
         if not question:
-            return None, "", {}, {}, None
+            return "", {}, {}, None
 
         script_path = output_dir / "scripts" / f"question_{number}_script.json"
         captions_path = output_dir / "captions" / f"question_{number}_captions.json"
@@ -51,7 +51,7 @@ def main() -> int:
         script = _read_json_if_exists(script_path)
         captions = _read_json_if_exists(captions_path)
         video = str(video_path) if video_path.exists() else None
-        return question.get("image_path"), question.get("text", ""), script, captions, video
+        return question.get("text", ""), script, captions, video
 
     def save_question(choice: str | None, text: str):
         number = selected_number(choice)
@@ -73,9 +73,7 @@ def main() -> int:
         with gr.Row():
             question_choice = gr.Dropdown(choices=choices(), label="Question")
             refresh = gr.Button("Refresh")
-        with gr.Row():
-            question_image = gr.Image(type="filepath", label="Question Crop", height=360)
-            question_text = gr.Textbox(label="Extracted Text", lines=14)
+        question_text = gr.Textbox(label="LaTeX Question", lines=14)
         with gr.Row():
             save = gr.Button("Save Text")
             status = gr.Textbox(label="Status", interactive=False)
@@ -87,7 +85,7 @@ def main() -> int:
         question_choice.change(
             load_question,
             inputs=question_choice,
-            outputs=[question_image, question_text, script_json, captions_json, video],
+            outputs=[question_text, script_json, captions_json, video],
         )
         refresh.click(lambda: gr.update(choices=choices()), outputs=question_choice)
         save.click(save_question, inputs=[question_choice, question_text], outputs=status)

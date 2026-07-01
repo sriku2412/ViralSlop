@@ -1,56 +1,41 @@
 # ViralSlop - An AI Slop maker
 
-AI-made shorts. Maximum brainrot. Zero shame.
+AI-made math shorts. Maximum brainrot. Zero shame.
 
-ViralSlop turns a math problem into one short vertical YouTube Shorts-style video per question, using local tools. It extracts questions, optionally uses OCR for scanned PDFs, asks a local Ollama model to solve and script each question, generates offline voice-over, and renders simple narrated 9:16 solution slides.
-
-The default model is `deepseek-r1:8b`, which is a good starting point for a regular Apple M4 MacBook Pro. Faster options include `qwen3:4b` and `deepseek-r1:7b`; stronger options include `deepseek-r1:14b` and `qwen3:14b`.
+ViralSlop turns one raw LaTeX math problem into a vertical YouTube Shorts-style solution video. It asks a local Ollama model for a complete narrated slide deck, renders LaTeX equations into clean on-screen math, generates offline voice-over, and exports an MP4.
 
 ## Output
 
 ```text
-input_pdfs/
-  your_exam.pdf
 output/
   questions.json
   solutions.json
-  question_images/
-    question_1.png
+  latex_inputs/
+    question_5.tex
   captions/
-    question_1_captions.json
+    question_5_captions.json
   scripts/
-    question_1_script.json
+    question_5_script.json
   audio/
-    question_1.wav
+    question_5.wav
   videos/
-    question_1_short.mp4
+    question_5_short.mp4
 ```
 
 ## Video Style
 
-The default preset is `solution_slides`:
-
-- Vertical `1080x1920` YouTube Shorts format.
-- Static full-screen slides: problem, main idea, solution steps, final answer.
-- Clean light background with readable dark text.
-- Original PDF question can appear on the first slide.
-- Slide timing is spread across the voice-over duration.
-- Difficult problems can expand into longer, multi-slide explanations instead of being skipped.
-- Timed caption JSON is still saved for review.
+- Vertical `1080x1920` solution slides.
+- Centered, uniform text layout with LaTeX-rendered display equations.
+- One ordered slide list drives the video, captions, and narration.
+- Complete proof slides are preferred over compressed summaries.
 - Offline voice-over through `pyttsx3` by default, with optional Piper support.
 
 ## Setup On Mac
 
 ```bash
-brew install ollama ffmpeg poppler
+brew install ollama ffmpeg
 ollama serve
 ollama pull deepseek-r1:8b
-```
-
-For OCR support on scanned PDFs:
-
-```bash
-brew install tesseract
 ```
 
 Python setup:
@@ -75,79 +60,59 @@ python review_app.py
 python main.py --check
 ```
 
-If the model is missing, pull it with:
-
-```bash
-ollama pull deepseek-r1:8b
-```
-
-If the server is not running:
-
-```bash
-ollama serve
-```
-
 ## Usage
 
-Process a local PDF:
+Generate one video from inline LaTeX:
 
 ```bash
-python main.py --pdf input_pdfs/exam.pdf
+python main.py --latex '\textbf{Problem 5}
+
+Prove that
+\[
+\frac{(a-b)^2}{8a}
+\le
+\frac{a+b}{2}-\sqrt{ab}
+\le
+\frac{(a-b)^2}{8b},
+\]
+for all \(a \ge b > 0\).'
 ```
 
-Process a PDF URL:
+Generate from a `.tex` file:
 
 ```bash
-python main.py --url "https://example.com/exam.pdf"
+python main.py --latex-file problem_5.tex
 ```
 
-Extract questions and question images only:
+Generate from stdin:
 
 ```bash
-python main.py --pdf input_pdfs/exam.pdf --extract-only
+cat <<'EOF' | python main.py --latex-file -
+\textbf{Problem 5}
+
+Prove that
+\[
+\frac{(a-b)^2}{8a}
+\le
+\frac{a+b}{2}-\sqrt{ab}
+\le
+\frac{(a-b)^2}{8b},
+\]
+for all \(a \ge b > 0\).
+EOF
 ```
 
-Generate scripts/captions only:
+ViralSlop infers the output number from labels like `Problem 5` or `\textbf{Problem 5}`. Override it with `--question-number 5` when the source has no label. The raw input is saved under `output/latex_inputs/`.
+
+Useful modes:
 
 ```bash
-python main.py --pdf input_pdfs/exam.pdf --scripts-only
-```
-
-Process selected questions:
-
-```bash
-python main.py --pdf input_pdfs/exam.pdf --questions 1,3,5
-```
-
-Render a faster preview:
-
-```bash
-python main.py --pdf input_pdfs/exam.pdf --preview --max-questions 1
-```
-
-Give a difficult problem more room:
-
-```bash
-python main.py --pdf input_pdfs/exam.pdf --preview --max-questions 1 --duration 240 --min-solution-steps 10 --max-solution-steps 0
-```
-
-Use a different local model:
-
-```bash
-python main.py --pdf input_pdfs/exam.pdf --model qwen3:4b
-```
-
-Generate a sample exam PDF:
-
-```bash
-python scripts/create_sample_exam_pdf.py
-python main.py --pdf examples/sample_exam.pdf --max-questions 1
-```
-
-Review extracted questions, scripts, captions, and videos in a local browser:
-
-```bash
-python review_app.py
+python main.py --latex-file problem_5.tex --extract-only
+python main.py --latex-file problem_5.tex --scripts-only
+python main.py --latex-file problem_5.tex --no-video
+python main.py --latex-file problem_5.tex --preview
+python main.py --latex-file problem_5.tex --duration 240 --min-solution-steps 10
+python main.py --latex-file problem_5.tex --model qwen3:14b
 ```
 
 ## Config
@@ -156,41 +121,19 @@ Edit `config.yaml`:
 
 ```yaml
 ollama_model: deepseek-r1:8b
-ollama_num_predict: 2200
-input_pdf_folder: input_pdfs
+ollama_num_predict: 6000
 style_preset: solution_slides
 video_duration_target: 180
 output_resolution: [1080, 1920]
 font_size: 68
-reveal_mode: slide
-question_hold_seconds: 0.0
-thinking_gap_seconds: 0.0
-answer_hold_seconds: 2.0
-show_question_image: true
 render_latex: true
 min_solution_steps: 8
 max_solution_steps:
 tts_engine: pyttsx3
-ocr_enabled: true
 output_folder: output
-max_questions:
 skip_difficult: false
 ```
 
-By default, ViralSlop now asks the model to expand hard problems into more slides and still renders the result. `ollama_num_predict` keeps local model generations from running away; raise it if a stronger model needs more room. Set `skip_difficult: true` or pass `--skip-difficult` if you prefer to save only script metadata when the model says it cannot produce a complete solution.
-
-## Current Local PDF
-
-The pasted IMO problem PDF has been moved to:
-
-```text
-input_pdfs/IMO-2025-problems-eng.pdf
-```
-
-Extraction-only mode correctly detects 6 problems from it and saves readable question crops.
-
-## Notes
+Raise `ollama_num_predict` or use `--ollama-num-predict 0` if a long proof is still truncated. Set `skip_difficult: true` or pass `--skip-difficult` if you prefer to save only script metadata when the model says it cannot produce a complete solution.
 
 Everything is local by default. No cloud API is required.
-
-For scanned PDFs, OCR depends on the local Tesseract binary. For text-based PDFs, OCR is not used unless extraction finds no readable text.

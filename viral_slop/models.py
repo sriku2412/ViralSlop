@@ -9,8 +9,6 @@ class Question:
     number: int
     label: str
     text: str
-    page_number: int | None = None
-    image_path: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

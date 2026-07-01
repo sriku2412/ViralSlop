@@ -4,6 +4,7 @@ import argparse
 from dataclasses import asdict
 
 from viral_slop.config import load_config, parse_resolution, save_default_config
+from viral_slop.latex_input import read_latex_problem
 from viral_slop.ollama_client import OllamaClient
 from viral_slop.pipeline import PipelineOptions, ShortsPipeline
 from viral_slop.system_check import collect_system_info, format_system_info
@@ -11,10 +12,18 @@ from viral_slop.system_check import collect_system_info, format_system_info
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Create local YouTube Shorts videos from a math exam PDF.",
+        description="Create local YouTube Shorts videos from one LaTeX math problem.",
     )
-    parser.add_argument("--pdf", help="Path to a local math exam PDF.")
-    parser.add_argument("--url", help="URL to a math exam PDF.")
+    parser.add_argument("--latex", help="Raw LaTeX for one math problem.")
+    parser.add_argument(
+        "--latex-file",
+        help="Path to a .tex file containing one problem. Use '-' to read from stdin.",
+    )
+    parser.add_argument(
+        "--question-number",
+        type=int,
+        help="Question number to use for --latex/--latex-file if one cannot be inferred.",
+    )
     parser.add_argument("--model", help="Ollama model name, e.g. deepseek-r1:8b.")
     parser.add_argument(
         "--ollama-num-predict",
@@ -23,11 +32,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--config", default="config.yaml", help="Path to config YAML.")
     parser.add_argument("--output", help="Output folder override.")
-    parser.add_argument("--max-questions", type=int, help="Limit how many questions to process.")
-    parser.add_argument(
-        "--questions",
-        help="Comma-separated question numbers to process, e.g. 1,3,5.",
-    )
     parser.add_argument(
         "--resolution",
         help="Output resolution override, e.g. 1080x1920.",
@@ -49,12 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--style",
-        help="Style preset override. Default: chalkboard_teacher.",
+        help="Style preset override. Default: solution_slides.",
     )
     parser.add_argument(
         "--extract-only",
         action="store_true",
-        help="Extract questions and question images, then exit before Ollama.",
+        help="Save the LaTeX question JSON/source, then exit before Ollama.",
     )
     parser.add_argument(
         "--scripts-only",
@@ -75,11 +79,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--preview",
         action="store_true",
         help="Render faster low-resolution preview videos at 540x960 and 15 fps.",
-    )
-    parser.add_argument(
-        "--no-ocr",
-        action="store_true",
-        help="Disable OCR fallback for scanned PDFs.",
     )
     skip_group = parser.add_mutually_exclusive_group()
     skip_group.add_argument(
@@ -122,8 +121,6 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.output:
         config.output_folder = args.output
-    if args.max_questions is not None:
-        config.max_questions = args.max_questions
     if args.resolution:
         config.output_resolution = parse_resolution(args.resolution)
     if args.duration is not None:
@@ -139,8 +136,6 @@ def main(argv: list[str] | None = None) -> int:
         config.output_resolution = (540, 960)
         config.fps = 15
         config.font_size = min(config.font_size, 42)
-    if args.no_ocr:
-        config.ocr_enabled = False
     if args.skip_difficult:
         config.skip_difficult = True
     if args.no_skip_difficult:
@@ -162,35 +157,25 @@ def main(argv: list[str] | None = None) -> int:
             print(f"- {key}: {value}")
         return 0 if check.model_available else 1
 
-    if not args.pdf and not args.url:
-        parser.error("Provide --pdf path/to/exam.pdf or --url https://example.com/exam.pdf")
+    source_count = sum(value is not None for value in [args.latex, args.latex_file])
+    if source_count != 1:
+        parser.error(
+            "Provide exactly one source: --latex '...' or --latex-file problem.tex"
+        )
+    if args.question_number is not None and args.question_number <= 0:
+        parser.error("--question-number must be positive.")
 
     options = PipelineOptions(
         extract_only=args.extract_only,
         scripts_only=args.scripts_only,
         no_video=args.no_video,
         skip_existing=args.skip_existing,
-        question_numbers=_parse_question_numbers(args.questions),
     )
     pipeline = ShortsPipeline(config, options)
     try:
-        pipeline.run(pdf_path=args.pdf, pdf_url=args.url)
+        latex = read_latex_problem(args.latex, args.latex_file)
+        pipeline.run_latex(latex, question_number=args.question_number)
     except (RuntimeError, ValueError, FileNotFoundError) as exc:
         print(f"Error: {exc}")
         return 1
     return 0
-
-
-def _parse_question_numbers(value: str | None) -> set[int] | None:
-    if not value:
-        return None
-    numbers: set[int] = set()
-    for piece in value.split(","):
-        piece = piece.strip()
-        if not piece:
-            continue
-        try:
-            numbers.add(int(piece))
-        except ValueError as exc:
-            raise SystemExit(f"Invalid --questions value '{piece}'. Use numbers like 1,3,5.") from exc
-    return numbers or None

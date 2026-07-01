@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -11,9 +11,8 @@ class AppConfig:
     ollama_base_url: str = "http://localhost:11434"
     ollama_timeout_seconds: int = 240
     ollama_json_mode: bool = True
-    ollama_num_predict: int | None = 2200
+    ollama_num_predict: int | None = 6000
 
-    input_pdf_folder: str = "input_pdfs"
     video_duration_target: int = 180
     output_resolution: tuple[int, int] = (1080, 1920)
     fps: int = 30
@@ -27,7 +26,6 @@ class AppConfig:
     thinking_gap_seconds: float = 0.0
     answer_hold_seconds: float = 2.0
     caption_pause_seconds: float = 0.35
-    show_question_image: bool = True
     render_latex: bool = True
     low_res_preview: bool = False
     min_solution_steps: int = 8
@@ -39,23 +37,12 @@ class AppConfig:
     piper_binary: str = "piper"
     piper_model_path: str | None = None
 
-    ocr_enabled: bool = True
-    ocr_language: str = "eng"
-    ocr_dpi: int = 220
-    question_image_dpi: int = 160
-    poppler_bin_dir: str | None = None
-
     output_folder: str = "output"
-    max_questions: int | None = None
     skip_difficult: bool = False
 
     @property
     def output_path(self) -> Path:
         return Path(self.output_folder).expanduser().resolve()
-
-    @property
-    def input_pdf_path(self) -> Path:
-        return Path(self.input_pdf_folder).expanduser().resolve()
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:
@@ -79,7 +66,9 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         raise ValueError(f"Config file must contain a YAML mapping: {config_path}")
 
     values = asdict(config)
-    values.update(_normalize_config_values(loaded))
+    normalized = _normalize_config_values(loaded)
+    allowed_keys = {field.name for field in fields(AppConfig)}
+    values.update({key: value for key, value in normalized.items() if key in allowed_keys})
     return AppConfig(**values)
 
 
@@ -94,8 +83,7 @@ def save_default_config(path: str | Path) -> None:
                 "ollama_base_url: http://localhost:11434",
                 "ollama_timeout_seconds: 240",
                 "ollama_json_mode: true",
-                "ollama_num_predict: 2200",
-                "input_pdf_folder: input_pdfs",
+                "ollama_num_predict: 6000",
                 "video_duration_target: 180",
                 "output_resolution: [1080, 1920]",
                 "fps: 30",
@@ -109,7 +97,6 @@ def save_default_config(path: str | Path) -> None:
                 "thinking_gap_seconds: 0.0",
                 "answer_hold_seconds: 2.0",
                 "caption_pause_seconds: 0.35",
-                "show_question_image: true",
                 "render_latex: true",
                 "low_res_preview: false",
                 "min_solution_steps: 8",
@@ -119,13 +106,7 @@ def save_default_config(path: str | Path) -> None:
                 "tts_rate: 175",
                 "piper_binary: piper",
                 "piper_model_path:",
-                "ocr_enabled: true",
-                "ocr_language: eng",
-                "ocr_dpi: 220",
-                "question_image_dpi: 160",
-                "poppler_bin_dir:",
                 "output_folder: output",
-                "max_questions:",
                 "skip_difficult: false",
                 "",
             ]
@@ -143,8 +124,6 @@ def _normalize_config_values(values: dict[str, Any]) -> dict[str, Any]:
     if normalized.get("ollama_num_predict") is not None:
         num_predict = int(normalized["ollama_num_predict"])
         normalized["ollama_num_predict"] = num_predict if num_predict > 0 else None
-    if normalized.get("max_questions") == "":
-        normalized["max_questions"] = None
     if normalized.get("max_solution_steps") == "":
         normalized["max_solution_steps"] = None
     if normalized.get("max_solution_steps") is not None:
@@ -161,8 +140,6 @@ def _normalize_config_values(values: dict[str, Any]) -> dict[str, Any]:
         normalized["tts_voice"] = None
     if normalized.get("piper_model_path") == "":
         normalized["piper_model_path"] = None
-    if normalized.get("poppler_bin_dir") == "":
-        normalized["poppler_bin_dir"] = None
     return normalized
 
 
